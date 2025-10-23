@@ -117,5 +117,5 @@ app.get("/proxy", async (req, res) => {
 });
 
 app.listen(PORT, () => {
-  console.log(`🔥 Axios streaming proxy running at http://localhost:${PORT}/proxy?url=...`);
+  console.log(` Axios streaming proxy running at http://localhost:${PORT}/proxy?url=...`);
 });
