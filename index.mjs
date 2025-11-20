@@ -1,19 +1,22 @@
-// api/proxy.js
+// server.js
+import express from "express";
 import axios from "axios";
+import cors from "cors";
 
-const BLOG_HOST = "megacloud.blog";
+const app = express();
+app.use(cors());
+
+const PORT = process.env.PORT || 3000;
+const BLOG_HOST = process.env.BLOG_HOST || "megacloud.blog";
 const FIXED_BLOG_REFERER = `https://${BLOG_HOST}/`;
 const FIXED_BLOG_ORIGIN = `https://${BLOG_HOST}`;
 
-export default async function handler(req, res) {
+app.get("/proxy", async (req, res) => {
   try {
     const target = req.query.url;
     console.log("[Proxy] Incoming request for URL:", target);
 
-    if (!target) {
-      console.warn("[Proxy] Missing URL parameter");
-      return res.status(400).json({ error: "Missing ?url=" });
-    }
+    if (!target) return res.status(400).json({ error: "Missing ?url=" });
 
     const parsed = new URL(target);
     const range = req.headers.range;
@@ -35,7 +38,7 @@ export default async function handler(req, res) {
     const response = await axios.get(parsed.href, {
       headers,
       responseType: "stream",
-      validateStatus: () => true, // don't throw on 403/404
+      validateStatus: () => true,
     });
 
     const contentType = response.headers["content-type"] || "";
@@ -43,20 +46,19 @@ export default async function handler(req, res) {
 
     console.log(`[Proxy] Upstream status: ${status}, Content-Type: ${contentType}`);
 
-    // Handle playlists
+    // Playlist handling
     if (contentType.includes("mpegurl") || parsed.pathname.endsWith(".m3u8")) {
       console.log("[Proxy] Detected playlist, rewriting...");
       const chunks = [];
       response.data.on("data", (chunk) => chunks.push(chunk));
       response.data.on("end", () => {
         const text = Buffer.concat(chunks).toString("utf-8");
-        const base = parsed;
 
         const rewritten = text.replace(/^(?!#)(.+)$/gm, (line) => {
           try {
-            const abs = new URL(line, base).href;
+            const abs = new URL(line, parsed).href;
             console.log("[Proxy] Rewriting playlist line:", line, "→", abs);
-            return `/api/proxy?url=${encodeURIComponent(abs)}`;
+            return `/proxy?url=${encodeURIComponent(abs)}`;
           } catch {
             return line;
           }
@@ -71,7 +73,7 @@ export default async function handler(req, res) {
       return;
     }
 
-    // Stream binary content
+    // Stream binary/video
     console.log("[Proxy] Streaming binary/video content");
     let totalBytes = 0;
     response.data.on("data", (chunk) => {
@@ -97,4 +99,8 @@ export default async function handler(req, res) {
     console.error("[Proxy] Fatal error:", err);
     res.status(500).json({ error: "Proxy error", details: err.message });
   }
-}
+});
+
+app.listen(PORT, () => {
+  console.log(`🚀 Proxy running at http://localhost:${PORT}/proxy?url=...`);
+});
